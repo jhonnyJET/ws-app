@@ -13,6 +13,8 @@ import jakarta.websocket.OnError;
 import jakarta.websocket.OnOpen;
 import jakarta.websocket.Session;
 import jakarta.websocket.server.PathParam;
+import org.eclipse.microprofile.config.inject.ConfigProperty;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
@@ -21,6 +23,10 @@ import java.util.logging.Logger;
 @jakarta.websocket.server.ServerEndpoint("/api/v1/websocket/{userId}")
 @ApplicationScoped
 public class LocationWs {
+
+
+    @ConfigProperty(name = "max.connections.per.host")
+    Integer MAX_CONNECTIONS_PER_HOST;
 
     @Inject
     WsSessionApi wsSessionApi;
@@ -41,6 +47,9 @@ public class LocationWs {
     @OnOpen
     public void onOpen(Session session, @PathParam("userId") String userId) {
         Logger.getAnonymousLogger().log(Level.WARNING, "Ws OnOpen : " + session.getId());
+        if(isMaxConnectionPerHostReached()) {
+            throw new RuntimeException("Max Connections Limit Exceeded Exception");
+        }
         host.getContainerHostname().subscribe().with(hostname -> {
             Logger.getAnonymousLogger().log(Level.WARNING, "Ws OnOpen Hostname : " + hostname);
             try {
@@ -77,5 +86,9 @@ public class LocationWs {
                 error -> Logger.getAnonymousLogger().log(Level.SEVERE, "Failed to remove WebSocket session from Redis", error)
         );
         connectionManager.remove(session);
+    }
+
+    private Boolean isMaxConnectionPerHostReached() {
+        return connectionManager.getTotalConnections() >= MAX_CONNECTIONS_PER_HOST;
     }
 }

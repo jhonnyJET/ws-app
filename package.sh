@@ -13,3 +13,4 @@ echo "Version: $version";
 echo "Arch: $arch";
 
 mvn package -Dquarkus.container-image.build=true -Dquarkus.package.type=jar -Dquarkus.container-image.tag=${version}-${arch}
+podman push jonathas.santos/ws-app:${version}-${arch} docker.io/jhonnyvennom/ws-app-server:${version}-${arch}

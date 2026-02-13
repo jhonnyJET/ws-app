@@ -8,6 +8,7 @@ import infrastructure.resources.websocket.dto.ConnectionManager;
 import infrastructure.utils.Host;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.websocket.CloseReason;
 import jakarta.websocket.OnClose;
 import jakarta.websocket.OnError;
 import jakarta.websocket.OnOpen;
@@ -15,8 +16,7 @@ import jakarta.websocket.Session;
 import jakarta.websocket.server.PathParam;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.io.IOException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -46,23 +46,25 @@ public class LocationWs {
 
     @OnOpen
     public void onOpen(Session session, @PathParam("userId") String userId) {
-        Logger.getAnonymousLogger().log(Level.WARNING, "Ws OnOpen : " + session.getId());
-        if(isMaxConnectionPerHostReached()) {
-            throw new RuntimeException("Max Connections Limit Exceeded Exception");
-        }
         host.getContainerHostname().subscribe().with(hostname -> {
-            Logger.getAnonymousLogger().log(Level.WARNING, "Ws OnOpen Hostname : " + hostname);
+            if(isMaxConnectionPerHostReached()) {
+                try {
+                    session.close(new CloseReason(CloseReason.CloseCodes.TRY_AGAIN_LATER, "Maximum connections per host reached"));
+                } catch (IOException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }            
+                return;
+            }            
+
             try {
                 PersistentSession persistentSession = new PersistentSession(userId, session.getId(), hostname);            
                 
-                Logger.getAnonymousLogger().log(Level.WARNING, "Attempting to save WebSocket session to Redis: " + session.getId());
                 wsSessionApi.save(session.getId(), persistentSession).subscribe().with(
                     unused -> Logger.getAnonymousLogger().log(Level.WARNING, "Successfully saved WebSocket session to Redis: " + session.getId()),
                     error -> Logger.getAnonymousLogger().log(Level.SEVERE, "Failed to save WebSocket session to Redis", error)
                 );
-                connectionManager.add(session);
-                Logger.getAnonymousLogger().log(Level.WARNING, "Successfully saved WebSocket session to Redis: " + session.getId());
-                
+                connectionManager.add(session);                
             } catch (Exception e) {
                 Logger.getAnonymousLogger().log(Level.SEVERE, "Failed to save WebSocket session to Redis", e);
                 throw e;
@@ -89,6 +91,7 @@ public class LocationWs {
     }
 
     private Boolean isMaxConnectionPerHostReached() {
+        Logger.getAnonymousLogger().log(Level.WARNING, "Total connections: " + connectionManager.getTotalConnections() + " MAX_CONNECTIONS_PER_HOST: " + MAX_CONNECTIONS_PER_HOST);
         return connectionManager.getTotalConnections() >= MAX_CONNECTIONS_PER_HOST;
     }
 }
